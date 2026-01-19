@@ -1,0 +1,9 @@
+{
+  "id": "748d3eb0-bb62-44d7-82c5-8d1a3fceb3ff",
+  "name": "测试项目",
+  "description": "这是一个测试项目",
+  "baseline_doc": "# 测试项目基准文档\n\n这是项目的基准文档。",
+  "status": "active",
+  "created_at": "2026-01-11T10:35:30.330027",
+  "updated_at": "2026-01-11T10:35:30.330027"
+}

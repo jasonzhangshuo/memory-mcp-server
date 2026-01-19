@@ -1,0 +1,164 @@
+{
+  "timestamp": "2026-01-11T10:28:36.267508",
+  "summary": {
+    "total": 11,
+    "passed": 11,
+    "must_pass": {
+      "total": 4,
+      "passed": 4
+    },
+    "expect_pass": {
+      "total": 3,
+      "passed": 3
+    },
+    "extra": {
+      "total": 4,
+      "passed": 4
+    }
+  },
+  "results": [
+    {
+      "test_id": "T1",
+      "name": "显式读取 - 历史引用",
+      "category": "必须通过",
+      "passed": true,
+      "error": null,
+      "details": {
+        "found_count": 1,
+        "found_title": "戒糖讨论"
+      },
+      "tool_called": true,
+      "result_correct": true
+    },
+    {
+      "test_id": "T2",
+      "name": "显式读取 - 目标查询",
+      "category": "必须通过",
+      "passed": true,
+      "error": null,
+      "details": {
+        "found_count": 1,
+        "goal_title": "核心目标：50岁退休"
+      },
+      "tool_called": true,
+      "result_correct": true
+    },
+    {
+      "test_id": "T3",
+      "name": "显式保存 - 保存请求",
+      "category": "必须通过",
+      "passed": true,
+      "error": null,
+      "details": {
+        "saved_id": "ca247187-1d30-4b26-a614-dc2d8ba228a0",
+        "verified": true
+      },
+      "tool_called": true,
+      "result_correct": true
+    },
+    {
+      "test_id": "T5",
+      "name": "空结果处理 - 未找到记录",
+      "category": "必须通过",
+      "passed": true,
+      "error": null,
+      "details": {
+        "count": 0,
+        "message": "没有找到相关记录"
+      },
+      "tool_called": true,
+      "result_correct": true
+    },
+    {
+      "test_id": "T6",
+      "name": "隐式读取 - 进展查询",
+      "category": "期望通过",
+      "passed": true,
+      "error": null,
+      "details": {
+        "found_count": 1
+      },
+      "tool_called": true,
+      "result_correct": true
+    },
+    {
+      "test_id": "T7",
+      "name": "隐式保存 - 重要决定",
+      "category": "期望通过",
+      "passed": true,
+      "error": null,
+      "details": {
+        "saved_id": "dedd8a3d-de65-4665-b9bd-060bf0c958d3",
+        "category": "decision"
+      },
+      "tool_called": true,
+      "result_correct": true
+    },
+    {
+      "test_id": "T8",
+      "name": "无关问题 - 不触发工具",
+      "category": "期望通过",
+      "passed": true,
+      "error": null,
+      "details": {
+        "note": "此测试需要在实际对话中验证 AI 是否不调用工具"
+      },
+      "tool_called": false,
+      "result_correct": false
+    },
+    {
+      "test_id": "E1",
+      "name": "类别过滤",
+      "category": "额外测试",
+      "passed": true,
+      "error": null,
+      "details": {
+        "found_count": 1,
+        "all_category_match": true
+      },
+      "tool_called": true,
+      "result_correct": true
+    },
+    {
+      "test_id": "E2",
+      "name": "limit 参数",
+      "category": "额外测试",
+      "passed": true,
+      "error": null,
+      "details": {
+        "requested_limit": 2,
+        "actual_count": 2
+      },
+      "tool_called": true,
+      "result_correct": true
+    },
+    {
+      "test_id": "E3",
+      "name": "多关键词搜索",
+      "category": "额外测试",
+      "passed": true,
+      "error": null,
+      "details": {
+        "found_count": 1
+      },
+      "tool_called": true,
+      "result_correct": true
+    },
+    {
+      "test_id": "E4",
+      "name": "重要性排序",
+      "category": "额外测试",
+      "passed": true,
+      "error": null,
+      "details": {
+        "sorted": true,
+        "importances": [
+          5,
+          1
+        ]
+      },
+      "tool_called": true,
+      "result_correct": true
+    }
+  ]
+}

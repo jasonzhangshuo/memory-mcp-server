@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Database
+*.db
+*.db-journal
+
+# Entries
+entries/
+
+# Test data (重要：避免提交测试数据)
+test_memory.db
+test_entries/
+test_reports/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+
+# User tokens
+.user_token.json
+
+# Runtime state
+storage/feishu_event_ids.json

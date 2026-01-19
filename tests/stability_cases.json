@@ -1,0 +1,202 @@
+{
+  "cases": [
+    {
+      "id": "history_01",
+      "prompt": "你还记得我上次说过AI复盘吗？",
+      "expected_tool": "memory_search",
+      "params": {
+        "query": "AI复盘",
+        "limit": 5
+      },
+      "quality": {
+        "require_message_on_empty": true
+      }
+    },
+    {
+      "id": "history_02",
+      "prompt": "我们之前讨论过的冥想计划是什么？",
+      "expected_tool": "memory_search",
+      "params": {
+        "query": "冥想计划",
+        "limit": 5
+      },
+      "quality": {
+        "require_message_on_empty": true
+      }
+    },
+    {
+      "id": "goal_query",
+      "prompt": "我的目标是什么？",
+      "expected_tool": "memory_search",
+      "params": {
+        "query": "",
+        "category": "goal",
+        "limit": 5
+      },
+      "quality": {
+        "require_message_on_empty": true
+      }
+    },
+    {
+      "id": "plan_query",
+      "prompt": "我的计划进展怎么样了",
+      "expected_tool": "memory_search",
+      "params": {
+        "query": "",
+        "category": "plan",
+        "limit": 5
+      },
+      "quality": {
+        "require_message_on_empty": true
+      }
+    },
+    {
+      "id": "progress_query",
+      "prompt": "写作项目进展怎么样了",
+      "expected_tool": "memory_search",
+      "params": {
+        "query": "写作项目",
+        "category": "progress",
+        "limit": 5
+      },
+      "quality": {
+        "require_message_on_empty": true
+      }
+    },
+    {
+      "id": "remember_explicit",
+      "prompt": "记住：我决定每天冥想10分钟",
+      "expected_tool": "memory_add",
+      "params": {
+        "category": "auto",
+        "title": "每天冥想",
+        "content": "我决定每天冥想10分钟",
+        "importance": 4
+      },
+      "quality": {
+        "require_id": true
+      }
+    },
+    {
+      "id": "remember_implicit_decision",
+      "prompt": "我决定从今天起每天运动",
+      "expected_tool": "memory_add",
+      "params": {
+        "category": "decision",
+        "title": "每天运动",
+        "content": "我决定从今天起每天运动",
+        "importance": 4
+      },
+      "quality": {
+        "require_id": true
+      }
+    },
+    {
+      "id": "insight_discovery",
+      "prompt": "我发现自己总是在拖延",
+      "expected_tool": "memory_add",
+      "params": {
+        "category": "insight",
+        "title": "拖延模式",
+        "content": "我发现自己总是在拖延"
+      },
+      "quality": {
+        "require_id": true
+      }
+    },
+    {
+      "id": "thought_expression",
+      "prompt": "我觉得需要减少信息摄入",
+      "expected_tool": "memory_add",
+      "params": {
+        "category": "insight",
+        "title": "信息摄入",
+        "content": "我觉得需要减少信息摄入"
+      },
+      "quality": {
+        "require_id": true
+      }
+    },
+    {
+      "id": "knowledge_save",
+      "prompt": "存到知识库：这篇文章讲了复利思维",
+      "expected_tool": "memory_add",
+      "params": {
+        "category": "knowledge",
+        "title": "复利思维文章",
+        "content": "摘要：复利思维的关键是长期主义",
+        "project": "knowledge-base/思维"
+      },
+      "quality": {
+        "require_id": true
+      }
+    },
+    {
+      "id": "reference_save",
+      "prompt": "保存这个链接：https://example.com",
+      "expected_tool": "memory_add",
+      "params": {
+        "category": "reference",
+        "title": "参考链接",
+        "content": "https://example.com"
+      },
+      "quality": {
+        "require_id": true
+      }
+    },
+    {
+      "id": "digest_save",
+      "prompt": "帮我总结这个月学了什么",
+      "expected_tool": "memory_add",
+      "params": {
+        "category": "digest",
+        "title": "本月学习总结",
+        "content": "摘要：本月学习重点"
+      },
+      "quality": {
+        "require_id": true
+      }
+    },
+    {
+      "id": "suggest_category",
+      "prompt": "记住这个：我在想AI对写作的影响",
+      "expected_tool": "memory_suggest_category",
+      "params": {
+        "title": "AI与写作",
+        "content": "我在想AI对写作的影响"
+      },
+      "quality": {
+        "require_confidence": true
+      }
+    },
+    {
+      "id": "list_tags",
+      "prompt": "列出我的所有标签",
+      "expected_tool": "memory_list_tags",
+      "params": {},
+      "quality": {
+        "require_tags": true
+      }
+    },
+    {
+      "id": "project_context",
+      "prompt": "新对话，请加载项目上下文：knowledge-base",
+      "expected_tool": "memory_get_project_context",
+      "params": {
+        "project": "knowledge-base",
+        "include_baseline": true,
+        "recent_limit": 5
+      },
+      "quality": {
+        "allow_error": true
+      }
+    },
+    {
+      "id": "no_save",
+      "prompt": "不用记这个，只是随口一说",
+      "expected_tool": "none",
+      "params": {},
+      "quality": {}
+    }
+  ]
+}
