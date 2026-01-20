@@ -43,3 +43,5 @@ logs/
 
 # Runtime state
 storage/feishu_event_ids.json
+storage/feishu_temp_inbox.jsonl
+storage/feishu_poller_state.json

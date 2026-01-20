@@ -10,6 +10,7 @@
 - 🏷️ **标签系统**：灵活的标签管理和筛选
 - 📊 **项目管理**：按项目组织记忆，支持项目上下文
 - 🔄 **飞书同步**：自动同步到飞书多维表格
+- 💬 **飞书消息处理**：临时收件箱 + AI 分析后归档到记忆
 
 ## 🚀 快速开始
 
@@ -55,6 +56,7 @@ pip install -r requirements.txt
 - **[MAINTENANCE.md](MAINTENANCE.md)** - 系统维护指南
 - **[CHANGELOG.md](CHANGELOG.md)** - 更新日志
 - **[优化总结.md](优化总结.md)** - 最新优化说明
+- **[PRD_飞书消息处理_v1.0.md](PRD_飞书消息处理_v1.0.md)** - 飞书消息处理方案
 
 ### 详细文档
 - **[docs/](docs/)** - 完整文档目录
@@ -87,6 +89,38 @@ python scripts/cleanup.py
 ./scripts/run_tests.sh stability    # 稳定性测试
 ./scripts/run_tests.sh performance  # 性能测试
 ```
+
+## 💬 飞书消息处理流程
+
+**核心原则**：飞书消息先进入临时收件箱，经 AI 分析后再写入永久记忆。
+
+### 1) 飞书消息接收
+- 飞书事件回调到服务器 `feishu_event_webhook.py`
+- 消息写入 `storage/feishu_temp_inbox.jsonl`（临时区）
+- 不再直接写入 `memory.db`
+
+### 2) 手动拉取（Claude/Cursor）
+使用 MCP 工具获取临时消息：
+```
+feishu_fetch_inbox(limit=10)
+```
+
+### 3) AI 分析后归档
+分析后决定是否入库：
+```
+feishu_archive_to_memory(
+  message_id="om_xxx",
+  analyzed_title="…",
+  analyzed_content="…",
+  tags=["…"],
+  importance=3
+)
+```
+
+### 4) 定时提醒（服务器）
+服务器轮询临时收件箱，发现新消息则通知飞书：
+- 脚本：`scripts/feishu_poller.py`
+- systemd：`scripts/feishu-poller.service`
 
 ## 📊 系统状态
 

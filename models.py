@@ -242,9 +242,21 @@ class FeishuListChatsInput(BaseModel):
     use_user_token: Optional[bool] = Field(False, description="是否使用用户身份 token（默认 False）")
 
 
-class FeishuRealtimeFetchInput(BaseModel):
-    """Input model for feishu_realtime_fetch tool."""
-    limit: Optional[int] = Field(5, description="返回数量，默认5，最大100", ge=1, le=100)
+class FeishuFetchInboxInput(BaseModel):
+    """Input model for feishu_fetch_inbox tool."""
+    limit: Optional[int] = Field(10, description="返回数量，默认10，最大100", ge=1, le=100)
+    include_archived: Optional[bool] = Field(False, description="是否包含已归档消息，默认False")
+
+
+class FeishuArchiveToMemoryInput(BaseModel):
+    """Input model for feishu_archive_to_memory tool."""
+    message_id: str = Field(..., description="飞书消息 ID")
+    analyzed_title: str = Field(..., description="AI 分析后的标题")
+    analyzed_content: str = Field(..., description="AI 分析后的内容")
+    category: Optional[str] = Field("conversation", description="记忆类别，默认 conversation")
+    tags: Optional[List[str]] = Field(None, description="标签列表")
+    importance: Optional[int] = Field(3, description="重要性 1-5，默认3", ge=1, le=5)
+    project: Optional[str] = Field(None, description="所属项目")
 
 
 class FeishuOAuthAuthorizeInput(BaseModel):

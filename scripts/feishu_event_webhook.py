@@ -6,8 +6,7 @@ import asyncio
 import json
 import os
 import threading
-import sqlite3
-import queue
+# import queue  # [SSE-REALTIME] Future feature
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from datetime import datetime
@@ -26,11 +25,6 @@ if env_path.exists():
 import sys
 sys.path.insert(0, str(project_root))
 
-from models import MemoryAddInput
-from storage.db import init_db, add_memory
-from sync.feishu_client import FeishuClient
-from config import get_db_path
-
 
 VERIFICATION_TOKEN = os.getenv("FEISHU_VERIFICATION_TOKEN", "")
 ENCRYPT_KEY = os.getenv("FEISHU_ENCRYPT_KEY", "")
@@ -42,9 +36,11 @@ PUSH_API_TOKEN = os.getenv("FEISHU_WEBHOOK_PUSH_TOKEN", "")
 
 DEDUP_PATH = project_root / "storage" / "feishu_event_ids.json"
 DEDUP_MAX = 1000
+TEMP_INBOX_PATH = project_root / "storage" / "feishu_temp_inbox.jsonl"
 
-SUBSCRIBERS_LOCK = threading.Lock()
-SUBSCRIBERS: set = set()
+# [SSE-REALTIME] Future feature - currently commented out
+# SUBSCRIBERS_LOCK = threading.Lock()
+# SUBSCRIBERS: set = set()
 
 
 def _load_dedup_ids() -> set:
@@ -79,56 +75,81 @@ def _parse_text_message(message: Dict[str, Any]) -> str:
     return f"[{message_type}] {content}"
 
 
-def _load_recent_entries(limit: int = 20) -> list:
-    db_path = get_db_path()
-    if not os.path.exists(db_path):
+def _load_temp_inbox(limit: int = 20, include_archived: bool = False) -> list:
+    """Load messages from temp inbox JSONL file."""
+    if not TEMP_INBOX_PATH.exists():
         return []
-
+    
     safe_limit = max(1, min(limit, 100))
     entries = []
+    
     try:
-        with sqlite3.connect(db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute(
-                """
-                SELECT entry_path FROM memories
-                WHERE project = ?
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                ("feishu-inbox", safe_limit),
-            )
-            for row in cursor:
-                entry_path = row["entry_path"]
-                if entry_path and os.path.exists(entry_path):
-                    try:
-                        with open(entry_path, "r", encoding="utf-8") as f:
-                            entries.append(json.load(f))
-                    except Exception:
+        with open(TEMP_INBOX_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if not include_archived and entry.get("archived"):
                         continue
+                    entries.append(entry)
+                except Exception:
+                    continue
+        
+        # Sort by created_at desc
+        entries.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return entries[:safe_limit]
     except Exception:
         return []
-    return entries
 
 
-def _broadcast_event(payload: Dict[str, Any]) -> None:
-    with SUBSCRIBERS_LOCK:
-        subscribers = list(SUBSCRIBERS)
-    print(f"[DEBUG] _broadcast_event called: {len(subscribers)} subscribers, text={payload.get('text', '')[:50]}")
-    if not subscribers:
-        return
-    for subscriber in subscribers:
-        try:
-            subscriber.put_nowait(payload)
-            print(f"[DEBUG] Sent to subscriber")
-        except Exception as e:
-            print(f"[DEBUG] Failed to send: {e}")
-            continue
+def _mark_message_archived(message_id: str) -> bool:
+    """Mark a message as archived in temp inbox."""
+    if not TEMP_INBOX_PATH.exists():
+        return False
+    
+    try:
+        lines = []
+        updated = False
+        with open(TEMP_INBOX_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                entry = json.loads(line)
+                if entry.get("message_id") == message_id:
+                    entry["archived"] = True
+                    updated = True
+                lines.append(json.dumps(entry, ensure_ascii=False))
+        
+        if updated:
+            with open(TEMP_INBOX_PATH, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+        
+        return updated
+    except Exception:
+        return False
+
+
+# [SSE-REALTIME] Future feature - currently commented out
+# def _broadcast_event(payload: Dict[str, Any]) -> None:
+#     with SUBSCRIBERS_LOCK:
+#         subscribers = list(SUBSCRIBERS)
+#     print(f"[DEBUG] _broadcast_event called: {len(subscribers)} subscribers, text={payload.get('text', '')[:50]}")
+#     if not subscribers:
+#         return
+#     for subscriber in subscribers:
+#         try:
+#             subscriber.put_nowait(payload)
+#             print(f"[DEBUG] Sent to subscriber")
+#         except Exception as e:
+#             print(f"[DEBUG] Failed to send: {e}")
+#             continue
 
 
 async def _store_event(event_payload: Dict[str, Any]) -> None:
-    await init_db()
-
+    """Store Feishu event to temp inbox (not memory)."""
     event = event_payload.get("event", {})
     header = event_payload.get("header", {})
     message = event.get("message", {})
@@ -150,63 +171,32 @@ async def _store_event(event_payload: Dict[str, Any]) -> None:
     except Exception:
         created_at = datetime.now().isoformat()
 
-    content = {
-        "text": text,
+    # Write to temp inbox (JSONL format)
+    entry = {
+        "message_id": message.get("message_id"),
         "chat_id": message.get("chat_id"),
         "chat_type": message.get("chat_type"),
-        "message_id": message.get("message_id"),
         "sender_open_id": sender.get("open_id"),
         "sender_union_id": sender.get("union_id"),
         "created_at": created_at,
-        "raw": message,
-    }
-
-    _broadcast_event({
-        "message_id": message.get("message_id"),
-        "chat_id": message.get("chat_id"),
-        "chat_type": message.get("chat_type"),
-        "sender_open_id": sender.get("open_id"),
-        "created_at": created_at,
         "text": text,
-    })
-
-    # 1) Save to memory (local DB)
-    if SAVE_TO_MEMORY:
-        title = text[:50] + ("..." if len(text) > 50 else "")
-        await add_memory(
-            memory_id=str(header.get("event_id") or message.get("message_id") or os.urandom(8).hex()),
-            category="conversation",
-            title=title or "Feishu message",
-            content=json.dumps(content, ensure_ascii=False, indent=2),
-            project="feishu-inbox",
-            importance=3,
-            source_type="feishu_im",
-            tags=["feishu", "im", message.get("chat_type", "unknown")],
-        )
-
-    # 2) Optional: write to separate Feishu table
-    if IM_TABLE_ID:
-        client = FeishuClient()
-        fields = {
-            "标题": title or "Feishu message",
-            "内容": text,
-            "记忆ID": message.get("message_id") or header.get("event_id"),
-            "项目": "feishu-inbox",
-            "标签": ["feishu", "im", message.get("chat_type", "unknown")],
-        }
-        try:
-            await client.create_record(fields=fields, table_id=IM_TABLE_ID)
-        except Exception:
-            pass
-
-    # 3) Optional: append to Feishu document
-    if IM_DOC_TOKEN:
-        client = FeishuClient()
-        line = f"- {created_at} | {sender.get('open_id','')} | {text}\n"
-        try:
-            await client.append_document_content(IM_DOC_TOKEN, line)
-        except Exception:
-            pass
+        "archived": False,
+        "received_at": datetime.now().isoformat(),
+    }
+    
+    TEMP_INBOX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(TEMP_INBOX_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    
+    # [SSE-REALTIME] Future feature - currently commented out
+    # _broadcast_event({
+    #     "message_id": message.get("message_id"),
+    #     "chat_id": message.get("chat_id"),
+    #     "chat_type": message.get("chat_type"),
+    #     "sender_open_id": sender.get("open_id"),
+    #     "created_at": created_at,
+    #     "text": text,
+    # })
 
 
 class FeishuWebhookHandler(BaseHTTPRequestHandler):
@@ -247,53 +237,102 @@ class FeishuWebhookHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        
+        # Health check
         if parsed.path == "/health":
             self._send_json({"ok": True})
             return
-        if parsed.path in ("/stream", "/feishu/stream"):
-            if not self._is_stream_authorized():
-                self._send_json({"error": "unauthorized"}, status=401)
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
-            self.end_headers()
-
-            subscriber = queue.Queue(maxsize=100)
-            with SUBSCRIBERS_LOCK:
-                SUBSCRIBERS.add(subscriber)
-            print(f"[DEBUG] New SSE subscriber registered. Total subscribers: {len(SUBSCRIBERS)}")
-            try:
-                self.wfile.write(b": ok\n\n")
-                self.wfile.flush()
-                while True:
-                    try:
-                        payload = subscriber.get(timeout=15)
-                        data = json.dumps(payload, ensure_ascii=False)
-                        self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
-                        self.wfile.flush()
-                    except queue.Empty:
-                        self.wfile.write(b": keep-alive\n\n")
-                        self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-            finally:
-                with SUBSCRIBERS_LOCK:
-                    SUBSCRIBERS.discard(subscriber)
-            return
-        if parsed.path in ("/inbox", "/feishu/inbox"):
+        
+        # [SSE-REALTIME] Future feature - currently commented out
+        # if parsed.path in ("/stream", "/feishu/stream"):
+        #     if not self._is_stream_authorized():
+        #         self._send_json({"error": "unauthorized"}, status=401)
+        #         return
+        #     self.send_response(200)
+        #     self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        #     self.send_header("Cache-Control", "no-cache")
+        #     self.send_header("Connection", "keep-alive")
+        #     self.end_headers()
+        #     subscriber = queue.Queue(maxsize=100)
+        #     with SUBSCRIBERS_LOCK:
+        #         SUBSCRIBERS.add(subscriber)
+        #     print(f"[DEBUG] New SSE subscriber registered. Total subscribers: {len(SUBSCRIBERS)}")
+        #     try:
+        #         self.wfile.write(b": ok\n\n")
+        #         self.wfile.flush()
+        #         while True:
+        #             try:
+        #                 payload = subscriber.get(timeout=15)
+        #                 data = json.dumps(payload, ensure_ascii=False)
+        #                 self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+        #                 self.wfile.flush()
+        #             except queue.Empty:
+        #                 self.wfile.write(b": keep-alive\n\n")
+        #                 self.wfile.flush()
+        #     except (BrokenPipeError, ConnectionResetError):
+        #         pass
+        #     finally:
+        #         with SUBSCRIBERS_LOCK:
+        #             SUBSCRIBERS.discard(subscriber)
+        #     return
+        
+        # Temp inbox endpoint (NEW)
+        if parsed.path in ("/temp_inbox", "/feishu/temp_inbox"):
             if not self._is_authorized():
                 self._send_json({"error": "unauthorized"}, status=401)
                 return
             params = parse_qs(parsed.query)
             try:
                 limit = int(params.get("limit", ["20"])[0])
+                include_archived = params.get("include_archived", ["false"])[0].lower() == "true"
             except Exception:
                 limit = 20
-            entries = _load_recent_entries(limit=limit)
+                include_archived = False
+            entries = _load_temp_inbox(limit=limit, include_archived=include_archived)
             self._send_json({"ok": True, "count": len(entries), "items": entries})
             return
+        
+        self._send_json({"error": "not_found"}, status=404)
+
+    def do_PATCH(self) -> None:
+        """Handle PATCH requests for archiving messages."""
+        parsed = urlparse(self.path)
+        
+        # PATCH /feishu/temp_inbox/:message_id
+        if parsed.path.startswith("/feishu/temp_inbox/") or parsed.path.startswith("/temp_inbox/"):
+            if not self._is_authorized():
+                self._send_json({"error": "unauthorized"}, status=401)
+                return
+            
+            # Extract message_id from path
+            parts = parsed.path.split("/")
+            message_id = parts[-1] if len(parts) > 0 else None
+            
+            if not message_id:
+                self._send_json({"error": "message_id_required"}, status=400)
+                return
+            
+            # Read request body
+            length = int(self.headers.get("Content-Length", "0"))
+            if length > 0:
+                raw = self.rfile.read(length)
+                try:
+                    data = json.loads(raw.decode("utf-8") or "{}")
+                except Exception:
+                    self._send_json({"error": "invalid_json"}, status=400)
+                    return
+            else:
+                data = {}
+            
+            # Mark as archived
+            if data.get("archived") is True:
+                success = _mark_message_archived(message_id)
+                if success:
+                    self._send_json({"ok": True, "message": "marked_as_archived"})
+                else:
+                    self._send_json({"error": "message_not_found"}, status=404)
+                return
+        
         self._send_json({"error": "not_found"}, status=404)
 
     def do_POST(self) -> None:

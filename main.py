@@ -48,7 +48,8 @@ from models import (
     FeishuListWikiNodesInput,
     FeishuSendMessageInput,
     FeishuListChatsInput,
-    FeishuRealtimeFetchInput,
+    FeishuFetchInboxInput,
+    FeishuArchiveToMemoryInput,
     FeishuOAuthAuthorizeInput,
     FeishuOAuthExchangeTokenInput,
 )
@@ -73,7 +74,8 @@ from tools.feishu_create_document import feishu_create_document
 from tools.feishu_update_document import feishu_update_document
 from tools.feishu_send_message import feishu_send_message
 from tools.feishu_list_chats import feishu_list_chats
-from tools.feishu_realtime_fetch import feishu_realtime_fetch
+from tools.feishu_fetch_inbox import feishu_fetch_inbox
+from tools.feishu_archive_to_memory import feishu_archive_to_memory
 from tools.feishu_get_document import feishu_get_document
 from tools.feishu_list_documents import feishu_list_documents
 from tools.feishu_list_wiki_nodes import feishu_list_wiki_nodes
@@ -807,25 +809,89 @@ async def list_chats_tool(
 
 
 @mcp.tool(
-    name="feishu_realtime_fetch",
+    name="feishu_fetch_inbox",
     annotations={
-        "title": "读取本地实时飞书消息队列",
+        "title": "拉取飞书临时收件箱",
         "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": False
     }
 )
-async def realtime_fetch_tool(limit: int = 5) -> str:
-    """读取本地实时飞书消息队列。
-
-    从本地 JSONL 队列文件读取最近的飞书消息。
-
+async def fetch_inbox_tool(
+    limit: int = 10,
+    include_archived: bool = False
+) -> str:
+    """拉取飞书临时收件箱消息。
+    
+    从服务器临时收件箱拉取飞书消息，供 AI 分析决策。
+    默认只返回未归档消息。
+    
+    使用场景：
+    - 用户说"查看飞书消息"、"有哪些新消息"
+    - 定期检查飞书群聊内容
+    - 分析用户在飞书中的讨论
+    
     Args:
-        limit: 返回数量，默认5，最大100
+        limit: 返回数量，默认10，最大100
+        include_archived: 是否包含已归档消息，默认False
     """
-    params = FeishuRealtimeFetchInput(limit=limit)
-    return await feishu_realtime_fetch(params)
+    params = FeishuFetchInboxInput(
+        limit=limit,
+        include_archived=include_archived
+    )
+    return await feishu_fetch_inbox(params)
+
+
+@mcp.tool(
+    name="feishu_archive_to_memory",
+    annotations={
+        "title": "归档飞书消息到记忆系统",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False
+    }
+)
+async def archive_to_memory_tool(
+    message_id: str,
+    analyzed_title: str,
+    analyzed_content: str,
+    category: str = "conversation",
+    tags: list = None,
+    importance: int = 3,
+    project: str = None
+) -> str:
+    """将分析后的飞书消息归档到记忆系统。
+    
+    先写入永久记忆库，再标记消息为已归档。
+    只归档经过 AI 分析后认为有价值的消息。
+    
+    使用场景：
+    - AI 分析飞书消息后，决定保存重要内容
+    - 用户说"把这条消息保存到记忆"
+    - 将飞书讨论转化为知识条目
+    
+    Args:
+        message_id: 飞书消息 ID
+        analyzed_title: AI 分析后的标题（不是原消息文本）
+        analyzed_content: AI 分析后的内容（包含上下文、洞察等）
+        category: 记忆类别，默认 conversation
+        tags: 标签列表
+        importance: 重要性 1-5，默认3
+        project: 所属项目
+    """
+    await ensure_db_initialized()
+    params = FeishuArchiveToMemoryInput(
+        message_id=message_id,
+        analyzed_title=analyzed_title,
+        analyzed_content=analyzed_content,
+        category=category,
+        tags=tags,
+        importance=importance,
+        project=project
+    )
+    return await feishu_archive_to_memory(params)
 
 
 @mcp.tool(

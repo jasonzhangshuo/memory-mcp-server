@@ -1,0 +1,16 @@
+[Unit]
+Description=Feishu Message Poller
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/memory-mcp-server
+ExecStart=/usr/bin/python3 /root/memory-mcp-server/scripts/feishu_poller.py --interval 300
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
