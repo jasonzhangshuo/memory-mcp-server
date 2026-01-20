@@ -114,12 +114,15 @@ def _load_recent_entries(limit: int = 20) -> list:
 def _broadcast_event(payload: Dict[str, Any]) -> None:
     with SUBSCRIBERS_LOCK:
         subscribers = list(SUBSCRIBERS)
+    print(f"[DEBUG] _broadcast_event called: {len(subscribers)} subscribers, text={payload.get('text', '')[:50]}")
     if not subscribers:
         return
     for subscriber in subscribers:
         try:
             subscriber.put_nowait(payload)
-        except Exception:
+            print(f"[DEBUG] Sent to subscriber")
+        except Exception as e:
+            print(f"[DEBUG] Failed to send: {e}")
             continue
 
 
@@ -260,6 +263,7 @@ class FeishuWebhookHandler(BaseHTTPRequestHandler):
             subscriber = queue.Queue(maxsize=100)
             with SUBSCRIBERS_LOCK:
                 SUBSCRIBERS.add(subscriber)
+            print(f"[DEBUG] New SSE subscriber registered. Total subscribers: {len(SUBSCRIBERS)}")
             try:
                 self.wfile.write(b": ok\n\n")
                 self.wfile.flush()
