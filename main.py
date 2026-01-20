@@ -48,6 +48,7 @@ from models import (
     FeishuListWikiNodesInput,
     FeishuSendMessageInput,
     FeishuListChatsInput,
+    FeishuRealtimeFetchInput,
     FeishuOAuthAuthorizeInput,
     FeishuOAuthExchangeTokenInput,
 )
@@ -72,6 +73,7 @@ from tools.feishu_create_document import feishu_create_document
 from tools.feishu_update_document import feishu_update_document
 from tools.feishu_send_message import feishu_send_message
 from tools.feishu_list_chats import feishu_list_chats
+from tools.feishu_realtime_fetch import feishu_realtime_fetch
 from tools.feishu_get_document import feishu_get_document
 from tools.feishu_list_documents import feishu_list_documents
 from tools.feishu_list_wiki_nodes import feishu_list_wiki_nodes
@@ -802,6 +804,28 @@ async def list_chats_tool(
         use_user_token=use_user_token
     )
     return await feishu_list_chats(params)
+
+
+@mcp.tool(
+    name="feishu_realtime_fetch",
+    annotations={
+        "title": "读取本地实时飞书消息队列",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False
+    }
+)
+async def realtime_fetch_tool(limit: int = 5) -> str:
+    """读取本地实时飞书消息队列。
+
+    从本地 JSONL 队列文件读取最近的飞书消息。
+
+    Args:
+        limit: 返回数量，默认5，最大100
+    """
+    params = FeishuRealtimeFetchInput(limit=limit)
+    return await feishu_realtime_fetch(params)
 
 
 @mcp.tool(

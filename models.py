@@ -242,6 +242,11 @@ class FeishuListChatsInput(BaseModel):
     use_user_token: Optional[bool] = Field(False, description="是否使用用户身份 token（默认 False）")
 
 
+class FeishuRealtimeFetchInput(BaseModel):
+    """Input model for feishu_realtime_fetch tool."""
+    limit: Optional[int] = Field(5, description="返回数量，默认5，最大100", ge=1, le=100)
+
+
 class FeishuOAuthAuthorizeInput(BaseModel):
     """Input model for feishu_oauth_authorize tool."""
     redirect_uri: str = Field(..., description="授权后的回调地址（需要在飞书开放平台配置）")

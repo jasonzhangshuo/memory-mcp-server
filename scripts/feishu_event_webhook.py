@@ -6,10 +6,13 @@ import asyncio
 import json
 import os
 import threading
+import sqlite3
+import queue
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional
+from urllib.parse import parse_qs, urlparse
 
 from dotenv import load_dotenv
 
@@ -26,6 +29,7 @@ sys.path.insert(0, str(project_root))
 from models import MemoryAddInput
 from storage.db import init_db, add_memory
 from sync.feishu_client import FeishuClient
+from config import get_db_path
 
 
 VERIFICATION_TOKEN = os.getenv("FEISHU_VERIFICATION_TOKEN", "")
@@ -33,9 +37,14 @@ ENCRYPT_KEY = os.getenv("FEISHU_ENCRYPT_KEY", "")
 IM_TABLE_ID = os.getenv("FEISHU_IM_TABLE_ID", "")
 IM_DOC_TOKEN = os.getenv("FEISHU_IM_DOC_TOKEN", "")
 SAVE_TO_MEMORY = os.getenv("FEISHU_IM_SAVE_TO_MEMORY", "true").lower() == "true"
+READ_API_TOKEN = os.getenv("FEISHU_WEBHOOK_READ_TOKEN", "")
+PUSH_API_TOKEN = os.getenv("FEISHU_WEBHOOK_PUSH_TOKEN", "")
 
 DEDUP_PATH = project_root / "storage" / "feishu_event_ids.json"
 DEDUP_MAX = 1000
+
+SUBSCRIBERS_LOCK = threading.Lock()
+SUBSCRIBERS: set = set()
 
 
 def _load_dedup_ids() -> set:
@@ -68,6 +77,50 @@ def _parse_text_message(message: Dict[str, Any]) -> str:
         except Exception:
             return content or ""
     return f"[{message_type}] {content}"
+
+
+def _load_recent_entries(limit: int = 20) -> list:
+    db_path = get_db_path()
+    if not os.path.exists(db_path):
+        return []
+
+    safe_limit = max(1, min(limit, 100))
+    entries = []
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT entry_path FROM memories
+                WHERE project = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                ("feishu-inbox", safe_limit),
+            )
+            for row in cursor:
+                entry_path = row["entry_path"]
+                if entry_path and os.path.exists(entry_path):
+                    try:
+                        with open(entry_path, "r", encoding="utf-8") as f:
+                            entries.append(json.load(f))
+                    except Exception:
+                        continue
+    except Exception:
+        return []
+    return entries
+
+
+def _broadcast_event(payload: Dict[str, Any]) -> None:
+    with SUBSCRIBERS_LOCK:
+        subscribers = list(SUBSCRIBERS)
+    if not subscribers:
+        return
+    for subscriber in subscribers:
+        try:
+            subscriber.put_nowait(payload)
+        except Exception:
+            continue
 
 
 async def _store_event(event_payload: Dict[str, Any]) -> None:
@@ -104,6 +157,15 @@ async def _store_event(event_payload: Dict[str, Any]) -> None:
         "created_at": created_at,
         "raw": message,
     }
+
+    _broadcast_event({
+        "message_id": message.get("message_id"),
+        "chat_id": message.get("chat_id"),
+        "chat_type": message.get("chat_type"),
+        "sender_open_id": sender.get("open_id"),
+        "created_at": created_at,
+        "text": text,
+    })
 
     # 1) Save to memory (local DB)
     if SAVE_TO_MEMORY:
@@ -152,6 +214,83 @@ class FeishuWebhookHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _get_bearer_token(self) -> str:
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            return auth[len("Bearer "):].strip()
+        return ""
+
+    def _is_authorized(self) -> bool:
+        if not READ_API_TOKEN:
+            return True
+        token = self._get_bearer_token()
+        if token:
+            return token == READ_API_TOKEN
+        parsed = urlparse(self.path)
+        token_param = parse_qs(parsed.query).get("token", [""])[0]
+        return token_param == READ_API_TOKEN
+
+    def _is_stream_authorized(self) -> bool:
+        token = PUSH_API_TOKEN or READ_API_TOKEN
+        if not token:
+            return True
+        auth = self._get_bearer_token()
+        if auth:
+            return auth == token
+        parsed = urlparse(self.path)
+        token_param = parse_qs(parsed.query).get("token", [""])[0]
+        return token_param == token
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/health":
+            self._send_json({"ok": True})
+            return
+        if parsed.path in ("/stream", "/feishu/stream"):
+            if not self._is_stream_authorized():
+                self._send_json({"error": "unauthorized"}, status=401)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+
+            subscriber = queue.Queue(maxsize=100)
+            with SUBSCRIBERS_LOCK:
+                SUBSCRIBERS.add(subscriber)
+            try:
+                self.wfile.write(b": ok\n\n")
+                self.wfile.flush()
+                while True:
+                    try:
+                        payload = subscriber.get(timeout=15)
+                        data = json.dumps(payload, ensure_ascii=False)
+                        self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+                        self.wfile.flush()
+                    except queue.Empty:
+                        self.wfile.write(b": keep-alive\n\n")
+                        self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                with SUBSCRIBERS_LOCK:
+                    SUBSCRIBERS.discard(subscriber)
+            return
+        if parsed.path in ("/inbox", "/feishu/inbox"):
+            if not self._is_authorized():
+                self._send_json({"error": "unauthorized"}, status=401)
+                return
+            params = parse_qs(parsed.query)
+            try:
+                limit = int(params.get("limit", ["20"])[0])
+            except Exception:
+                limit = 20
+            entries = _load_recent_entries(limit=limit)
+            self._send_json({"ok": True, "count": len(entries), "items": entries})
+            return
+        self._send_json({"error": "not_found"}, status=404)
 
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
